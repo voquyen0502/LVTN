@@ -26,7 +26,7 @@ from scipy.linalg import sqrtm
 from torch.utils.data import DataLoader
 import json
 FLAGS = flags.FLAGS
-config_flags.DEFINE_config_file("config", "config/config.py", "Training configuration.")
+config_flags.DEFINE_config_file("config", "config/fid.py", "Training configuration.")
 from accelerate.utils import set_seed, ProjectConfiguration
 import torchvision.transforms.functional as F
 logger = get_logger(__name__)
