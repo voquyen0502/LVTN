@@ -294,7 +294,6 @@ def main(_):
     for epoch in list(range(first_epoch, config.num_epochs)):
         unet.train()
         info = defaultdict(list)
-        info_vis = defaultdict(list)
         
         for inner_iters in tqdm(list(range(config.train.data_loader_iterations)),position=0,disable=not accelerator.is_local_main_process):
             latent = torch.randn((config.train.batch_size_per_gpu_available, 4, 64, 64), device=accelerator.device, dtype=inference_dtype)
@@ -351,88 +350,25 @@ def main(_):
                         loss = calculate_fid(gt_ims, ims, batch_size=config.train.batch_size_per_gpu_available)
                         loss =  loss.sum()
                         loss = loss/config.train.batch_size_per_gpu_available
-                        loss = loss * config.train.loss_coeff
-                        
+
+                        info["loss"].append(loss)
+
                         # backward pass
                         accelerator.backward(loss)
                         if accelerator.sync_gradients:
                             accelerator.clip_grad_norm_(unet.parameters(), config.train.max_grad_norm)
                         optimizer.step()
-                        optimizer.zero_grad()                        
+                        optimizer.zero_grad()
 
             # Checks if the accelerator has performed an optimization step behind the scenes
             if accelerator.sync_gradients:
-                assert (
-                    inner_iters + 1
-                ) % config.train.gradient_accumulation_steps == 0
-                # log training and evaluation 
-                if config.visualize_eval and (global_step % config.vis_freq ==0):
-
-                    all_eval_images = []
-                    all_eval_rewards = []
-                    if config.same_evaluation:
-                        generator = torch.cuda.manual_seed(config.seed)
-                        latent = torch.randn((config.train.batch_size_per_gpu_available*config.max_vis_images, 4, 64, 64), device=accelerator.device, dtype=inference_dtype, generator=generator)    
-                    else:
-                        latent = torch.randn((config.train.batch_size_per_gpu_available*config.max_vis_images, 4, 64, 64), device=accelerator.device, dtype=inference_dtype)                                
-                    with torch.no_grad():
-                        for index in range(config.max_vis_images):
-                            ims, rewards = evaluate(latent[config.train.batch_size_per_gpu_available*index:config.train.batch_size_per_gpu_available *(index+1)],train_neg_prompt_embeds, eval_prompts[config.train.batch_size_per_gpu_available*index:config.train.batch_size_per_gpu_available *(index+1)], pipeline, accelerator, inference_dtype,config, loss_fn)
-                            all_eval_images.append(ims)
-                            all_eval_rewards.append(rewards)
-                    eval_rewards = torch.cat(all_eval_rewards)
-                    eval_reward_mean = eval_rewards.mean()
-                    eval_reward_std = eval_rewards.std()
-                    eval_images = torch.cat(all_eval_images)
-                    eval_image_vis = []
-                    if accelerator.is_main_process:
-
-                        name_val = wandb.run.name
-                        log_dir = f"logs/{name_val}/eval_vis"
-                        os.makedirs(log_dir, exist_ok=True)
-                        for i, eval_image in enumerate(eval_images):
-                            eval_image = (eval_image.clone().detach() / 2 + 0.5).clamp(0, 1)
-                            pil = Image.fromarray((eval_image.cpu().numpy().transpose(1, 2, 0) * 255).astype(np.uint8))
-                            prompt = eval_prompts[i]
-                            pil.save(f"{log_dir}/{epoch:03d}_{inner_iters:03d}_{i:03d}_{prompt}.png")
-                            pil = pil.resize((256, 256))
-                            reward = eval_rewards[i]
-                            eval_image_vis.append(wandb.Image(pil, caption=f"{prompt:.25} | {reward:.2f}"))                    
-                        accelerator.log({"eval_images": eval_image_vis},step=global_step)
-                
+                assert (inner_iters + 1) % config.train.gradient_accumulation_steps == 0
                 logger.info("Logging")
-                
-                info = {k: torch.mean(torch.stack(v)) for k, v in info.items()}
-                info = accelerator.reduce(info, reduction="mean")
-                logger.info(f"loss: {info['loss']}, rewards: {info['rewards']}")
-
-                info.update({"epoch": epoch, "inner_epoch": inner_iters, "eval_rewards":eval_reward_mean,"eval_rewards_std":eval_reward_std})
-                accelerator.log(info, step=global_step)
-
-                if config.visualize_train:
-                    ims = torch.cat(info_vis["image"])
-                    rewards = torch.cat(info_vis["rewards_img"])
-                    prompts = info_vis["prompts"]
-                    images  = []
-                    for i, image in enumerate(ims):
-                        image = (image.clone().detach() / 2 + 0.5).clamp(0, 1)
-                        pil = Image.fromarray((image.cpu().numpy().transpose(1, 2, 0) * 255).astype(np.uint8))
-                        pil = pil.resize((256, 256))
-                        prompt = prompts[i]
-                        reward = rewards[i]
-                        images.append(wandb.Image(pil, caption=f"{prompt:.25} | {reward:.2f}"))
-                    
-                    accelerator.log(
-                        {"images": images},
-                        step=global_step,
-                    )
-
+                logger.info(f"loss: {info['loss']}")
                 global_step += 1
-                info = defaultdict(list)
 
         # make sure we did an optimization step at the end of the inner epoch
         assert accelerator.sync_gradients
-        
         if epoch % config.save_freq == 0 and accelerator.is_main_process:
             accelerator.save_state()
 
