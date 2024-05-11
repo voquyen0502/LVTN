@@ -76,6 +76,7 @@ class DDPOTrainer(BaseTrainer):
         reward_function: Callable[[torch.Tensor, Tuple[str], Tuple[Any]], torch.Tensor],
         prompt_function: Callable[[], Tuple[str, Any]],
         sd_pipeline: DDPOStableDiffusionPipeline,
+        iterate: Optional[int] = 0,
         image_samples_hook: Optional[Callable[[Any, Any, Any], Any]] = None,
     ):
         if image_samples_hook is None:
@@ -84,6 +85,7 @@ class DDPOTrainer(BaseTrainer):
         self.prompt_fn = prompt_function
         self.reward_fn = reward_function
         self.config = config
+        self.iter = iterate
         self.image_samples_callback = image_samples_hook
         with open("valid_prompts.json", 'r') as f:
             self.valid_prompts = json.load(f)
@@ -283,7 +285,7 @@ class DDPOTrainer(BaseTrainer):
             step=global_step,
         )
         self.reward_list.append(rewards.mean())
-        self.plot_by_epoch(self.reward_list, "Reward", "reward_curves.png", "Reward")
+        self.plot_by_epoch(self.reward_list, "Reward", f"reward_curves_{iter}.png", "Reward")
         if self.config.per_prompt_stat_tracking:
             # gather the prompts across processes
             prompt_ids = self.accelerator.gather(samples["prompt_ids"]).cpu().numpy()
@@ -400,7 +402,6 @@ class DDPOTrainer(BaseTrainer):
             -self.config.train_adv_clip_max,
             self.config.train_adv_clip_max,
         )
-        print(log_prob-log_probs)
 
         ratio = torch.exp(log_prob - log_probs)
 
@@ -563,7 +564,7 @@ class DDPOTrainer(BaseTrainer):
                     info["clipfrac"].append(clipfrac)
                     info["loss"].append(loss)
                     self.loss_list.append(loss.item())
-                    self.plot_by_epoch(self.loss_list, "Loss", "loss_curve.png", "Loss")
+                    self.plot_by_epoch(self.loss_list, "Loss", f"loss_curve_{self.iter}.png", "Loss")
                     self.accelerator.backward(loss)
                     if self.accelerator.sync_gradients:
                         self.accelerator.clip_grad_norm_(
@@ -617,15 +618,14 @@ class DDPOTrainer(BaseTrainer):
         """
         Train the model for a given number of epochs
         """
-        for iter in range(self.config.iterations):
-            global_step = 0
-            if epochs is None:
-                epochs = self.config.num_epochs
-            for epoch in range(self.first_epoch, epochs):
-                print("\n=========================================\n")
-                print(f"Epoch: {epoch}/{epochs}")
-                global_step = self.step(epoch, global_step)
-            # self.valid(iter)
+        global_step = 0
+        if epochs is None:
+            epochs = self.config.num_epochs
+        for epoch in range(self.first_epoch, epochs):
+            print("\n=========================================\n")
+            print(f"Epoch: {epoch}/{epochs}")
+            global_step = self.step(epoch, global_step)
+        # self.valid(iter)
     def valid(self, iter):
         self.sd_pipeline.unet.eval()
         folder_path = f"valid_image_{iter}"
@@ -633,9 +633,10 @@ class DDPOTrainer(BaseTrainer):
             os.makedirs(folder_path)
         with torch.no_grad():
             for i, prompt in enumerate(self.valid_prompts.values()):
-                generator = torch.Generator("cuda").manual_seed(19)
+                generator = torch.Generator("cuda").manual_seed(0)
                 image = self.sd_pipeline(prompt, guidance_scale=self.config.sample_guidance_scale, generator=generator).images[0]
                 image.save(os.path.join(folder_path, f"{i}.png"))
+            
         self.sd_pipeline.unet.train()
     
     def create_model_card(self, path: str, model_name: Optional[str] = "TRL DDPO Model") -> None:

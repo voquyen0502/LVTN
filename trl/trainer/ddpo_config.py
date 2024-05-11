@@ -35,13 +35,9 @@ class DDPOConfig:
     """Top-level logging directory for checkpoint saving."""
 
     # hyperparameters
-    num_epochs: int = 200
+    num_epochs: int = 10
     """Number of epochs to train."""
-    num_epochs_per_valid: int = 50
-    """Number of epochs per validation."""
-    iterations: int = 3
-    """Number of iterations"""
-    save_freq: int = 1
+    save_freq: int = 10
     """Number of epochs between saving model checkpoints."""
     num_checkpoint_limit: int = 5
     """Number of checkpoints to keep before overwriting old ones."""
@@ -57,11 +53,11 @@ class DDPOConfig:
     """Eta parameter for the DDIM sampler."""
     sample_guidance_scale: float = 5.0
     """Classifier-free guidance weight."""
-    sample_batch_size: int = 1
+    sample_batch_size: int = 2
     """Batch size (per GPU!) to use for sampling."""
-    sample_num_batches_per_epoch: int = 2
+    sample_num_batches_per_epoch: int = 100
     """Number of batches to sample per epoch."""
-    train_batch_size: int = 1
+    train_batch_size: int = 2
     """Batch size (per GPU!) to use for training."""
     train_use_8bit_adam: bool = False
     """Whether to use the 8bit Adam optimizer from bitsandbytes."""
