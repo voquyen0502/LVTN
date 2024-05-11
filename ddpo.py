@@ -267,8 +267,10 @@ def calc_entrophy(embedding):
 #     return _fn
 
 def prompt_fn(prompt_set):
+    i = -1
     def _fn():
-        return np.random.choice(prompt_set), {}
+        i = (i+1)%len(prompt_set)
+        return prompt_set[i], {}
     return _fn
 
 # def simple_prompt_fn():
