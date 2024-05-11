@@ -249,21 +249,24 @@ def calc_entrophy(embedding):
     entropy = -torch.sum(probs * torch.log2(probs + 1e-12))
     return entropy.item()
 
-def prompt_fn(tokenizer, text_encoder):
-    def _fn():
-        samples = random.sample(train_dataset, 32)
-        prompt_ids = tokenizer(
-            samples,
-            return_tensors="pt",
-            padding="max_length",
-            truncation=True,
-            max_length=pipeline.tokenizer.model_max_length,
-        ).input_ids.to("cuda")
-        prompt_embeds = text_encoder(prompt_ids)[0]
-        entropys = [calc_entrophy(prompt_embed) for prompt_embed in prompt_embeds]
-        idx = entropys.index(max(entropys))
-        return samples[idx], {}
-    return _fn
+# def prompt_fn(tokenizer, text_encoder):
+#     def _fn():
+#         samples = random.sample(train_dataset, 32)
+#         prompt_ids = tokenizer(
+#             samples,
+#             return_tensors="pt",
+#             padding="max_length",
+#             truncation=True,
+#             max_length=pipeline.tokenizer.model_max_length,
+#         ).input_ids.to("cuda")
+#         prompt_embeds = text_encoder(prompt_ids)[0]
+#         entropys = [calc_entrophy(prompt_embed) for prompt_embed in prompt_embeds]
+#         idx = entropys.index(max(entropys))
+#         return samples[idx], {}
+#     return _fn
+
+def prompt_fn():
+    return np.random.choice(train_dataset), {}
 
 def simple_prompt_fn():
     return np.random.choice(animals), {}

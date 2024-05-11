@@ -39,6 +39,8 @@ class DDPOConfig:
     """Number of epochs to train."""
     num_epochs_per_valid: int = 50
     """Number of epochs per validation."""
+    iterations: int = 3
+    """Number of iterations"""
     save_freq: int = 1
     """Number of epochs between saving model checkpoints."""
     num_checkpoint_limit: int = 5

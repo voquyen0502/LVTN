@@ -617,19 +617,18 @@ class DDPOTrainer(BaseTrainer):
         """
         Train the model for a given number of epochs
         """
-        global_step = 0
-        if epochs is None:
-            epochs = self.config.num_epochs
-        for epoch in range(self.first_epoch, epochs):
-            print("\n=========================================\n")
-            print(f"Epoch: {epoch}/{epochs}")
-            global_step = self.step(epoch, global_step)
-            if epoch > 250 and (epoch+1) % self.config.num_epochs_per_valid == 0:
-                self.valid(epoch)
-    
-    def valid(self, epoch):
+        for iter in range(self.config.iterations):
+            global_step = 0
+            if epochs is None:
+                epochs = self.config.num_epochs
+            for epoch in range(self.first_epoch, epochs):
+                print("\n=========================================\n")
+                print(f"Epoch: {epoch}/{epochs}")
+                global_step = self.step(epoch, global_step)
+            # self.valid(iter)
+    def valid(self, iter):
         self.sd_pipeline.unet.eval()
-        folder_path = f"valid_image_{epoch}"
+        folder_path = f"valid_image_{iter}"
         if not os.path.exists(folder_path):
             os.makedirs(folder_path)
         with torch.no_grad():
