@@ -44,6 +44,7 @@ from torchvision.transforms import ToPILImage
 import json
 import random
 import hpsv2
+import torch_fidelity
 
 @dataclass
 class ScriptArguments:
@@ -214,35 +215,35 @@ def hpsv2_scorer():
 with open("train_prompts.json", 'r') as f:
         train_dataset = json.load(f)
 # list of example prompts to feed stable diffusion
-animals = [
-    "cat",
-    "dog",
-    "horse",
-    "monkey",
-    "rabbit",
-    "zebra",
-    "spider",
-    "bird",
-    "sheep",
-    "deer",
-    "cow",
-    "goat",
-    "lion",
-    "frog",
-    "chicken",
-    "duck",
-    "goose",
-    "bee",
-    "pig",
-    "turkey",
-    "fly",
-    "llama",
-    "camel",
-    "bat",
-    "gorilla",
-    "hedgehog",
-    "kangaroo",
-]
+# animals = [
+#     "cat",
+#     "dog",
+#     "horse",
+#     "monkey",
+#     "rabbit",
+#     "zebra",
+#     "spider",
+#     "bird",
+#     "sheep",
+#     "deer",
+#     "cow",
+#     "goat",
+#     "lion",
+#     "frog",
+#     "chicken",
+#     "duck",
+#     "goose",
+#     "bee",
+#     "pig",
+#     "turkey",
+#     "fly",
+#     "llama",
+#     "camel",
+#     "bat",
+#     "gorilla",
+#     "hedgehog",
+#     "kangaroo",
+# ]
 
 def calc_entrophy(embedding):
     probs = torch.abs(embedding) / torch.sum(torch.abs(embedding))
@@ -265,11 +266,13 @@ def calc_entrophy(embedding):
 #         return samples[idx], {}
 #     return _fn
 
-def prompt_fn():
-    return np.random.choice(train_dataset), {}
+def prompt_fn(prompt_set):
+    def _fn():
+        return np.random.choice(prompt_set), {}
+    return _fn
 
-def simple_prompt_fn():
-    return np.random.choice(animals), {}
+# def simple_prompt_fn():
+#     return np.random.choice(animals), {}
 
 def image_outputs_logger(image_data, global_step, accelerate_logger):
     # For the sake of this example, we will only log the last batch of images
@@ -295,8 +298,8 @@ if __name__ == "__main__":
     ddpo_config.project_kwargs = {
         "logging_dir": "./logs",
         "automatic_checkpoint_naming": True,
-        "total_limit": 5,
-        "project_dir": "./save",
+        "total_limit": 100,
+        "project_dir": "./LVTN",
     }
     realistic_prompt = """
     You are a photography lover. You love images that are natural and have bright colors. You need to grade the input image based on your preference. Please return just only the score from 1 to 5.
@@ -332,21 +335,37 @@ Answer: """
     pipeline = DefaultDDPOStableDiffusionPipeline(
         args.pretrained_model, pretrained_model_revision=args.pretrained_revision, use_lora=args.use_lora
     )
-    print(args.pretrained_model)
-    print(args.pretrained_revision)
-    print(args.use_lora)
+    TOTAL_ITERATION = 100
+    NUM_SELECTED_SAMPLE = 100
+    for iter in range(1, TOTAL_ITERATION + 1):
+        print(f"ITER {iter}:")
+        selected_samples = random.sample(train_dataset, NUM_SELECTED_SAMPLE)
+        trainer = DDPOTrainer(
+            ddpo_config,
+            llava_scorers(dark_prompt),
+            #aesthetic_scorer(args.hf_hub_aesthetic_model_id, args.hf_hub_aesthetic_model_filename),
+            prompt_fn(selected_samples),
+            #simple_prompt_fn,
+            pipeline,
+            iter,
+            #image_samples_hook=image_outputs_logger,
+        )
 
-    trainer = DDPOTrainer(
-        ddpo_config,
-        llava_scorers(dark_prompt),
-        #aesthetic_scorer(args.hf_hub_aesthetic_model_id, args.hf_hub_aesthetic_model_filename),
-        prompt_fn(pipeline.tokenizer, pipeline.text_encoder),
-        #simple_prompt_fn,
-        pipeline,
-        #image_samples_hook=image_outputs_logger,
-    )
-
-    trainer.train()
+        trainer.train()
+        train_dataset = [sample for sample in train_dataset if sample not in selected_samples]
+        if iter % 10 == 0:
+            trainer.valid(iter)
+            metrics_dict = torch_fidelity.calculate_metrics(
+                input1='ground_truth', 
+                input2=f'valid_image_{iter}', 
+                cuda=True, 
+                isc=True, 
+                fid=True, 
+                kid=True, 
+                prc=True, 
+                verbose=False,
+            )
+            with open(f'valid_image_{iter}/metrics_dict.json', 'w') as f:
+                json.dump(metrics_dict, f)
 
     #trainer.push_to_hub(args.hf_hub_model_id)
-
